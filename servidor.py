@@ -8,7 +8,9 @@
 ========================== IMPLEMENTAÇÃO DO SERVIDOR ==========================
 """
 import socket
-from multiprocessing import Process
+import threading
+import pyaudio
+import wave
 
 def imp_msg(msg, tipo="aviso"):
 	"""
@@ -24,24 +26,26 @@ def imp_msg(msg, tipo="aviso"):
 		imp_msg("Tipo de mensagem não identificado: {}".format(tipo), "erro")
 
 
-def nova_conexao(cliente):
-	"""
-	Função que trata cada cliente como uma única conexão
-	"""
-	conexao_cliente, end_cliente = cliente
-	imp_msg("Novo cliente {}".format(end_cliente))
-	
-	loop_while = True
+class Cliente(threading.Thread):
+	def __init__(self, cliente):
+		threading.Thread.__init__(self)
+		self.cliente = cliente
 
-	while loop_while:
-		input_cliente = conexao_cliente.recv(1024)
-		print(input_cliente.decode())
+	def run(self):
+		"""método que roda a conexão com o cliente na thread"""
+		conexao_cliente, end_cliente = self.cliente
+		imp_msg("Novo cliente {}".format(end_cliente))
+		
+		loop_while = True
 
-		if input_cliente.decode() == "sair":
-			loop_while = False
+		while loop_while:
+			input_cliente = conexao_cliente.recv(1024)
+			imp_msg("${}: {}".format(end_cliente, input_cliente.decode))
+			if input_cliente.decode() == "sair":
+				loop_while = False
 
-	imp_msg("Conexão fechada de {}".format(end_cliente))
-	conexao_cliente.close()
+		imp_msg("Conexão fechada de {}".format(end_cliente))
+		conexao_cliente.close()
 
 
 def main():
@@ -64,9 +68,9 @@ def main():
 			conexao_cliente, end_cliente = socket_servidor.accept()
 			try:
 				if conexao_cliente != None:
-					p_cliente = Process(target=nova_conexao, args=((conexao_cliente, end_cliente), ))
-					p_cliente.start()
-					p_cliente.join()
+					t_cliente = Cliente((conexao_cliente, end_cliente))
+					t_cliente.start()
+					#t_cliente.join()
 				else:
 					print("deu ruim")
 			except:
