@@ -17,13 +17,13 @@ def imp_msg(msg, tipo="aviso"):
 	tipo: aviso, erro, sucesso
 	"""
 	if tipo == "aviso":
-		print("\n[!] {}\n".format(msg))
+		print("\n[!] {}".format(msg))
 	elif tipo == "erro":
-		print("\n[-] {}\n".format(msg))
+		print("\n[-] {}".format(msg))
 	elif tipo == "sucesso":
-		print("\n[+] {}\n".format(msg))
+		print("\n[+] {}".format(msg))
 	else:
-		imp_msg("Tipo de mensagem não identificado: {}".format(tipo), "erro")
+		imp_msg("Tipo de mensagem não identificado: {}\n".format(tipo), "erro")
 
 
 class Cliente(threading.Thread):
@@ -32,20 +32,63 @@ class Cliente(threading.Thread):
 		self.cliente = cliente
 
 	def run(self):
-		"""método que roda a conexão com o cliente na thread"""
+		"""método que roda a conexão com o cliente na thread"""	
+		bloco = 1024
+
 		conexao_cliente, end_cliente = self.cliente
 		imp_msg("Novo cliente {}".format(end_cliente))
 		
 		loop_while = True
 
 		while loop_while:
-			input_cliente = conexao_cliente.recv(1024)
-			imp_msg("${}: {}".format(end_cliente, input_cliente.decode))
-			if input_cliente.decode() == "sair":
+			input_cliente = conexao_cliente.recv(1024).decode()
+			imp_msg("${}: {}".format(end_cliente, input_cliente))
+			if input_cliente == "sair":
 				loop_while = False
+			elif input_cliente == "transmitir":
+				imp_msg("Iniciando transmissão...")
+				try:
+					arquivo = "musicas/Thunderstruck.wav"
+					w_arquivo = wave.open(arquivo, "rb")
+					pa = pyaudio.PyAudio()
 
-		imp_msg("Conexão fechada de {}".format(end_cliente))
+					stream = pa.open(
+						format=pa.get_format_from_width(w_arquivo.getsampwidth()),
+						channels=w_arquivo.getnchannels(),
+						rate=w_arquivo.getframerate(),
+						output=True)
+
+					# codifica as informações da musica
+					# bloco, formato, canais, taxa
+					info = "{},{},{},{}".format(bloco, pa.get_format_from_width(w_arquivo.getsampwidth()), w_arquivo.getnchannels(), w_arquivo.getframerate())
+
+					# envia as informações da música
+					conexao_cliente.send(info.encode())
+
+					# espera pela confirmação do cliente
+					input_cliente = conexao_cliente.recv(1024).decode()
+
+					if input_cliente == "ok":
+						imp_msg("Transmitindo a musica {}".format(arquivo.split('/')[1]))
+
+						# primeira amostra
+						dado = w_arquivo.readframes(bloco)
+
+						# envia o arquivo de audio
+						while dado:
+							conexao_cliente.send(dado)
+							dado = w_arquivo.readframes(bloco)
+
+						conexao_cliente.send(''.encode())
+					else:
+						imp_msg("Cliente não confirmou os dados da música para transmissão", "erro")
+
+				except Exception as e:
+					imp_msg("Erro na transmissão", "erro")
+					print(e)
+
 		conexao_cliente.close()
+		imp_msg("Conexão fechada de {}".format(end_cliente))
 
 
 def main():
