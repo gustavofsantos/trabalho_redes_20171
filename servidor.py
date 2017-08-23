@@ -1,4 +1,4 @@
-#!/usr/bin/spython3
+#!/usr/bin/python3
 #! -*- coding: utf-8 -*-
 """
 ============================ REDES DE COMPUTADORES ============================
@@ -19,6 +19,7 @@ import pyaudio
 import wave
 import os
 import sys
+from netifaces import interfaces, ifaddresses, AF_INET
 
 
 def imp_msg(msg, tipo="aviso"):
@@ -41,6 +42,7 @@ class Cliente(threading.Thread):
         threading.Thread.__init__(self)
         self.cliente = cliente
         self.conexao_cliente, self.end_cliente = self.cliente
+        self.executando = False
 
     def novo_usuario(self, usuario, senha):
         # carregar a lista de usuarios
@@ -124,17 +126,19 @@ class Cliente(threading.Thread):
                         "Cliente não confirmou os dados da música para transmissão", "erro")
 
             except Exception as e:
-                imp_msg("Erro na transmissão", "erro")
+                imp_msg("Transmissão abortada", "erro")
 
     def run(self):
         """método que roda a conexão com o cliente na thread"""
+        self.executando = True
 
         imp_msg("Novo cliente {}".format(self.end_cliente))
 
         self.loop_while = True
         self.transmitindo = False
+        comandos_cliente = []
 
-        while self.loop_while:
+        while self.executando:
             input_cliente = self.conexao_cliente.recv(1024).decode()
             imp_msg("${}: {}".format(self.end_cliente, input_cliente))
 
@@ -143,18 +147,19 @@ class Cliente(threading.Thread):
             else:
                 comando = input_cliente
 
+            comandos_cliente.append(input_cliente)
+            # testa se o cliente não está sobrecarregando o servidor
+            if len(comandos_cliente) > 5:
+                ultimo_comando = input_cliente
+                ucs = [ultimo_comando]*5
+                # verifica se os ultimos 5 comandos foram iguais
+                if ucs == comandos_cliente[-1 -5:-1]:
+                    imp_msg("Cliente {} está sobrecarregando o servidor.".format(self.end_cliente))
+                    self.parar()
+
+
             if comando == "sair":
-                self.loop_while = False
-                # finalizar o cliente
-            elif comando == "login":
-                # executa o login do usuário
-                imp_msg("Não implementado", "erro")
-                # usuario, senha = argumento.split(",")
-                # self.login_usuario(usuario, senha)
-            elif comando == "novo":
-                imp_msg("Não implementado", "erro")
-                # usuario, senha = argumento.split(",")
-                # self.novo_usuario(usuario, senha)
+                self.parar()
             elif comando == "listar":
                 # envia ao cliente uma listagem das musicas contidas no diretório de músicas
                 self.listar_musicas_diretorio()
@@ -162,24 +167,37 @@ class Cliente(threading.Thread):
                 # transmite a musica selecionada ao cliente que a requisitou
                 self.transmitindo = True
                 self.transmitir("musicas/{}.wav".format(argumento), "tocar")  
-            elif comando == "pausar":
-                if self.transmitindo == True:
-                    imp_msg("Pausar a música {}".format(argumento))
-                else:
-                    imp_msg("Servidor não está transmitindo para o cliente {}".format(self.end_cliente))
+
 
         self.conexao_cliente.close()
         imp_msg("Conexão fechada de {}".format(self.end_cliente))
+
+    def parar(self):
+        self.executando = False
 
 
 def main():
     # encapsula o servidor dentro de um bloco de excessão para capturar erros
     try:
         # define o endereço do servidor
+
+        ### ÚNICA E EXCLUSIVAMENTE PARA ESTA MÁQUINA
+        iend = []
         ip_servidor = socket.gethostbyname(socket.gethostname())
+        for interface in interfaces():
+            enderecos = [end['addr'] for end in ifaddresses(interface).setdefault(AF_INET, [{'addr': 'Sem endereço IP'}])]
+            if interface == 'wlp6s0' and enderecos[0] != 'Sem endereço IP':
+                imp_msg("Interface wlp6s0 encontrada.", 'sucesso')
+                ip_servidor = enderecos[0]
+            elif interface == 'enp7s0' and enderecos[0] != 'Sem endereço IP':
+                imp_msg("Interface enp7s0 encontrada.", 'sucesso')
+                ip_servidor = enderecos[0]
+        
         porta = 9992
         servidor_vivo = False
 
+        # Tenta executar o servidor nas portas até encontrar uma porta disponível
+        # começa na porta 9992
         while not servidor_vivo:
             try:
                 imp_msg("Servidor iniciando em {}:{}...".format(ip_servidor, porta))
@@ -191,6 +209,7 @@ def main():
             except Exception as e:
                 imp_msg("Erro ao iniciar o servidor na porta {}".format(porta))
                 porta += 1
+                imp_msg("Tentando a porta {}...".format(porta))
 
         imp_msg("Aguardando conexões. Pressione Ctrl+C para parar.", "sucesso")
 
@@ -202,13 +221,13 @@ def main():
                     t_cliente.start()
                     t_cliente.join(1)
                 else:
-                    print("deu ruim")
+                    imp_msg("Cliente não conectado", "erro")
             except:
                 imp_msg("Falha na conexão com o cliente {}".format(
                     end_cliente), "erro")
 
     except KeyboardInterrupt as erro:
-        imp_msg("Saindo...")
+        imp_msg("Saindo...", 'sucesso')
         sys.exit(1)
 
 if __name__ == '__main__':
